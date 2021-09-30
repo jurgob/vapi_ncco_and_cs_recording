@@ -21,8 +21,10 @@ const {
 
 */
 
+const axios = require('axios');
 
 const DATACENTER = `https://api.nexmo.com` 
+
 
 const voiceEvent = async (req, res, next) => {
     const { logger, csClient } = req.nexmo;
@@ -88,7 +90,7 @@ const voiceAnswer = async (req, res, next) => {
 
 }
 
-const rtcEvent = async (event, { logger, csClient,storageClient }) => {
+const rtcEvent = async (event, { logger, csClient,storageClient,generateBEToken }) => {
     let type;
     try {
         type = event.type
@@ -109,7 +111,9 @@ const rtcEvent = async (event, { logger, csClient,storageClient }) => {
         } else if (type == 'audio:record:done') { /* the text to speech is finished */
             const recordingsString = await storageClient.get('recordings')
             const recordings = recordingsString ? JSON.parse(recordingsString) : []
-
+            const downloadRecordingsCommand = `curl --location --request GET 'https://api-us.nexmo.com/v1/files/3afa9c49-4cd7-48f5-9180-40163cdc2b0c' \
+            --header 'Authorization: Bearer ${generateBEToken()}' --output recording.mp3`
+            event.downloadRecordingsCommand = downloadRecordingsCommand;
             recordings.push(event)
 
             await storageClient.set('recordings', JSON.stringify(recordings))
@@ -137,6 +141,17 @@ const route =  async (app) => {
         res.json({
             recordings
         })
+    })
+    app.get('/token', async (req, res) => {
+        const {
+            generateBEToken
+        } = req.nexmo;
+        res.json({
+            token: generateBEToken()
+        })
+        // const downloadId = `3afa9c49-4cd7-48f5-9180-40163cdc2b0c`
+        //axios
+        // res.download(`https://api-us.nexmo.com/v1/files/${downloadId}`)
     })
 }
 
