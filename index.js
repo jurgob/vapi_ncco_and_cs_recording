@@ -39,37 +39,110 @@ const voiceEvent = async (req, res, next) => {
 }
 
 const voiceAnswer = async (req, res, next) => {
-    const { logger, csClient } = req.nexmo;
+    const { logger, csClient,storageClient } = req.nexmo;
     logger.info("req", { req_body   : req.body})
+    const legId = req.body.uuid
+    await storageClient.set('letID2Record', legId)
     try {
+        let recordRes = await csClient({
+            url: `${DATACENTER}/v0.3/legs/${legId}/recording`,
+            method: "post",
+            data: {
+                "split": false,
+                "streamed": true,
+                "beep": true,
+                "public": true,
+                "format": "mp3"
+            }
+        })
+        // logger.error(`* type: ${type}, line 3`)
+        let record_id = recordRes.data.id
+
         return res.json([
             {
                 "action": "talk",
-                "text": `Hello , This Is an NCCO Demo`
+                "text": `Hello , This Is an NCCO Demo, now we are gonna record you`
             },
             {
-                "action": "talk",
-                text: `Your number is ${req.body.from.split("").join(" ")}`
-            },
-            {
-                "action": "talk",
-                text: `And you are colling the number ${req.body.to.split("").join(" ")}`
-            },
-            {
-                "action": "talk",
-                text: `Have a nice day, now we are gonna hangup`
+                "action": "conversation",
+                "name": "nexmo-conference-standard",
             }
+            // {
+            //     "action": "talk",
+            //     text: `Your number is ${req.body.from.split("").join(" ")}`
+            // },
+            // {
+            //     "action": "talk",
+            //     text: `And you are colling the number ${req.body.to.split("").join(" ")}`
+            // },
+            // {
+            //     "action": "talk",
+            //     text: `Have a nice day, now we are gonna hangup`
+            // }
         ])
 
     } catch (err) {
 
-        logger.error("Error on voiceAnswer function")
+        logger.error("Error on voiceAnswer function", {err})
     }
 
 }
 
+const rtcEvent = async (event, { logger, csClient,storageClient }) => {
+    let type;
+    try {
+        type = event.type
+        
+        if(type == 'audio:say:done'){
+            logger.info(`* type: ${type}, line 1`)
+            const legId = await storageClient.get('letID2Record')
+            logger.info(`* type: ${type}, line 2`)
+            
+            await sleep(4000)
+            logger.info(`* type: ${type}, line 4`)
+            
+            await csClient({
+                url: `${DATACENTER}/v0.3/legs/${legId}/recording`,
+                method: "delete"
+            })
+            logger.info(`* type: ${type}, line 5`)
+        } else if (type == 'audio:record:done') { /* the text to speech is finished */
+            const recordingsString = await storageClient.get('recordings')
+            const recordings = recordingsString ? JSON.parse(recordingsString) : []
+
+            recordings.push(event)
+
+            await storageClient.set('recordings', JSON.stringify(recordings))
+        }
+
+
+    }catch(err){
+        logger.error({err}, `Error on rtcEvent function on event ${type}`)
+    }
+
+}
+
+const route =  async (app) => {
+    app.get('/recordings', async (req, res) => {
+
+        const {
+            logger,
+            storageClient
+        } = req.nexmo;
+        const recordingsString = await storageClient.get('recordings')
+        const recordings = recordingsString ? JSON.parse(recordingsString) : []
+
+        logger.info(`Hello Request HTTP `)
+
+        res.json({
+            recordings
+        })
+    })
+}
 
 module.exports = {
     voiceEvent,
-    voiceAnswer
+    rtcEvent,
+    voiceAnswer,
+    route
 }
